@@ -4,7 +4,7 @@ from PIL import Image
 import io
 import numpy as np
 from PIL.ImageFilter import GaussianBlur
-from scipy import ndimage
+
 
 st.set_page_config(page_title="Background Remover", page_icon="🖼️", layout="centered")
 
@@ -57,8 +57,6 @@ if uploaded_file:
             # Threshold: pixels close to bg_color are background
             mask = color_dist > 35  # Lower threshold for more accurate separation
             # Morphological operations to clean up mask
-            mask = ndimage.binary_dilation(mask, iterations=2)
-            mask = ndimage.binary_erosion(mask, iterations=2)
             # Create alpha channel
             alpha = np.where(mask, 255, 0).astype(np.uint8)
             result = img_array.copy()
