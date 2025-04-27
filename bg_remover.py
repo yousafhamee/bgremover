@@ -5,7 +5,6 @@ import io
 import numpy as np
 from PIL.ImageFilter import GaussianBlur
 from scipy import ndimage
-from sklearn.cluster import KMeans
 
 st.set_page_config(page_title="Background Remover", page_icon="🖼️", layout="centered")
 
@@ -35,47 +34,43 @@ st.write("Upload an image and remove its background with one click.")
 
 uploaded_file = st.file_uploader("Choose an image", type=["png", "jpg", "jpeg"])
 
-def get_kmeans_mask(img_array, n_clusters=3, bg_sample_coords=None):
-    h, w, c = img_array.shape
-    flat_img = img_array[...,:3].reshape(-1, 3)
-    kmeans = KMeans(n_clusters=n_clusters, n_init=5, random_state=42)
-    labels = kmeans.fit_predict(flat_img)
-    label_img = labels.reshape(h, w)
-    # If not provided, sample corners for background
-    if bg_sample_coords is None:
-        bg_sample_coords = [(0,0), (0,w-1), (h-1,0), (h-1,w-1)]
-    bg_labels = [label_img[y, x] for y, x in bg_sample_coords]
-    # Most common label among corners is background
-    from collections import Counter
-    bg_label = Counter(bg_labels).most_common(1)[0][0]
-    mask = label_img != bg_label
-    return mask
-
 if uploaded_file:
     input_image = Image.open(uploaded_file)
     st.image(input_image, caption="Original Image", use_container_width=True)
 
     if st.button("Remove Background"):
         with st.spinner("Processing..."):
+            # Simple background removal using image processing with NumPy for better performance
+            # Convert to RGBA if not already
             if input_image.mode != 'RGBA':
                 input_image = input_image.convert('RGBA')
+            
+            # Convert to numpy array for faster processing
             img_array = np.array(input_image)
-            # Use k-means clustering for better background/foreground separation
-            mask = get_kmeans_mask(img_array, n_clusters=3)
-            # Refine mask with morphological operations
+            
+            # Use a simple color-based background detection (assume background is similar to corners)
+            # Sample the four corners
+            corners = [img_array[0,0,:3], img_array[0,-1,:3], img_array[-1,0,:3], img_array[-1,-1,:3]]
+            bg_color = np.mean(corners, axis=0)
+            # Calculate distance from background color for each pixel
+            color_dist = np.sqrt(np.sum((img_array[...,:3] - bg_color) ** 2, axis=-1))
+            # Threshold: pixels close to bg_color are background
+            mask = color_dist > 35  # Lower threshold for more accurate separation
+            # Morphological operations to clean up mask
             mask = ndimage.binary_dilation(mask, iterations=2)
             mask = ndimage.binary_erosion(mask, iterations=2)
-            # Optionally, edge detection to further refine
-            edges = ndimage.sobel(mask.astype(float))
-            mask = np.logical_or(mask, edges > 0.1)
+            # Create alpha channel
             alpha = np.where(mask, 255, 0).astype(np.uint8)
             result = img_array.copy()
             result[..., 3] = alpha
             output_image = Image.fromarray(result)
+            
             output_bytes = io.BytesIO()
             output_image.save(output_bytes, format="PNG")
-            st.success("Background removed! (Improved for complex images using k-means clustering)")
+            st.success("Background removed! (Note: Using simple image processing as rembg is not compatible with Python 3.13)")
+
             st.image(output_image, caption="Image Without Background", use_container_width=True)
+            # Upscale the image to HD (2x size) using LANCZOS filter for high quality
             upscale_factor = 2
             upscaled_image = output_image.resize((output_image.width * upscale_factor, output_image.height * upscale_factor), Image.LANCZOS)
             upscaled_bytes = io.BytesIO()
